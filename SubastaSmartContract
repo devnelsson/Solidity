@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+contract SubastaSmartContract {
+
+    address public owner;           // Dirección del dueño del contrato
+    address public mejorOfertante;  // Dirección del oferente con la mejor oferta
+    uint public mejorOferta;        // Monto de la mejor oferta
+
+    uint public inicio;
+    uint public duracion;
+    bool public finalizada;
+
+    mapping(address => uint[]) public historialOfertas; // Para reembolsos parciales
+    mapping(address => uint) public depositos;          // Registro de depósitos por dirección
+
+    address[] public ofertantes; // Para mostrar listado de participantes
+
+    /* EVENTOS para registrar actividades importantes en la blockchain */
+    event NuevaOferta(address indexed oferente, uint monto);
+    event SubastaFinalizada(address ganador, uint monto);
+    event FondosRetirados(address indexed to, uint amount);
+    event ReembolsoParcial(address indexed to, uint amount);
+
+    // Constructor que inicializa la subasta
+    constructor(uint _duracionInicial) {
+        owner = msg.sender;                // Define como dueño al que despliega
+        inicio = block.timestamp;         // Guarda el tiempo actual
+        duracion = _duracionInicial;      // Establece duración de la subasta en segundos
+    }
+
+    // Modificador que permite solo al owner ejecutar ciertas funciones
+    modifier soloOwner() {
+        require(msg.sender == owner, "No eres el owner");
+        _;
+    }
+
+    // Modificador que asegura que la subasta esté activa
+    modifier subastaActiva() {
+        require(!finalizada, "Subasta finalizada");
+        require(block.timestamp <= inicio + duracion, "Tiempo terminado");
+        _;
+    }
+
+    // Función para realizar una OFERTA
+    function ofertar() external payable subastaActiva {
+        require(msg.value > 0, "Debes enviar ETH");
+
+        uint nuevoTotal = depositos[msg.sender] + msg.value; // Total ofertado hasta ahora
+        uint minimo = mejorOferta + (mejorOferta * 5) / 100; // Mínimo 5% más que la mejor oferta
+
+        require(nuevoTotal >= minimo, "Debes superar en al menos 5%");
+
+        historialOfertas[msg.sender].push(msg.value); // Guarda el monto enviado en historial
+
+        if (depositos[msg.sender] == 0) {
+            ofertantes.push(msg.sender); // Agrega a la lista de ofertantes si es nuevo
+        }
+
+        depositos[msg.sender] = nuevoTotal;     // Actualiza el depósito total del oferente
+        mejorOfertante = msg.sender;            // Define nuevo mejor oferente
+        mejorOferta = nuevoTotal;               // Actualiza la mejor oferta
+
+        emit NuevaOferta(msg.sender, nuevoTotal); // Emite evento de nueva oferta
+    }
+
+    // Función para finalizar la subasta (solo el owner)
+    function finalizar() external soloOwner {
+        require(!finalizada, "Ya finalizada");
+        require(block.timestamp >= inicio + duracion, "Subasta activa");
+
+        finalizada = true;
+        emit SubastaFinalizada(mejorOfertante, mejorOferta);
+    }
+
+    // Función para que los participantes no ganadores retiren sus fondos
+    function retirar() external {
+        require(finalizada, "Subasta no finalizada");
+        require(msg.sender != mejorOfertante, "Ganador no puede retirar");
+
+        uint deposito = depositos[msg.sender];
+        require(deposito > 0, "Nada que retirar");
+
+        uint comision = (deposito * 2) / 100;
+        uint reembolso = deposito - comision;
+
+        depositos[msg.sender] = 0;
+        payable(msg.sender).transfer(reembolso);
+    }
+
+    // El dueño retira el monto total recaudado después de finalizada la subasta
+    function retirarFondos() external soloOwner {
+        require(finalizada, "Subasta no finalizada");
+        require(address(this).balance > 0, "Sin balance");
+
+        uint monto = address(this).balance;
+        (bool exito, ) = payable(owner).call{value: monto}("");
+        require(exito, "Fallo al transferir");
+        emit FondosRetirados(owner, monto);
+    }
+
+    // Devuelve el tiempo restante en segundos
+    function tiempoRestante() external view returns (uint) {
+        if (block.timestamp >= inicio + duracion || finalizada) {
+            return 0;
+        } else {
+            return (inicio + duracion) - block.timestamp;
+        }
+    }
+
+    // Devuelve los oferentes y los montos que han ofertado
+    function mostrarOfertas() external view returns (address[] memory, uint[] memory) {
+        uint[] memory montos = new uint[](ofertantes.length);
+        for (uint i = 0; i < ofertantes.length; i++) {
+            montos[i] = depositos[ofertantes[i]];
+        }
+        return (ofertantes, montos);
+    }
+
+    // Devuelve el ganador actual y su oferta
+    function ganador() external view returns (address, uint) {
+        return (mejorOfertante, mejorOferta);
+    }
+
+    // Permite a un participante retirar el exceso de ofertas anteriores (antes de la última)
+    function reembolsoParcial() external subastaActiva {
+        uint[] storage ofertas = historialOfertas[msg.sender];
+        require(ofertas.length > 1, "Nada para reembolsar");
+
+        uint montoReembolsar = 0;
+        for (uint i = 0; i < ofertas.length - 1; i++) {
+            montoReembolsar += ofertas[i];
+        }
+
+        require(montoReembolsar > 0, "Nada para reembolsar");
+
+        uint ultima = ofertas[ofertas.length - 1];
+        historialOfertas[msg.sender] = [ultima];
+
+        depositos[msg.sender] -= montoReembolsar;
+        payable(msg.sender).transfer(montoReembolsar);
+
+        emit ReembolsoParcial(msg.sender, montoReembolsar);
+    }
+
+    // Muestra el balance total del contrato
+    function verBalance() external view returns (uint) {
+        return address(this).balance;
+    }
+}
