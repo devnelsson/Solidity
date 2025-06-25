@@ -1,7 +1,9 @@
 SubastaSmartContract
+
 SubastaSmartContract es un contrato inteligente en Solidity para gestionar una subasta descentralizada. Permite que los participantes hagan ofertas en ETH, y el dueño tiene control para finalizar la subasta y retirar fondos.
 
 Variables
+
 owner: Dirección del dueño del contrato (solo él puede finalizar la subasta y retirar fondos).
 
 mejorOfertante: Dirección del participante con la mejor oferta.
@@ -21,6 +23,7 @@ depositos: Monto acumulado por cada participante.
 ofertantes: Lista de participantes.
 
 Funciones
+
 constructor(uint _duracionInicial): Inicia el contrato, define la duración de la subasta.
 
 ofertar(): Permite hacer una oferta durante la subasta (debe ser un 5% más alta que la mejor oferta).
@@ -42,6 +45,7 @@ reembolsoParcial(): Permite retirar ofertas anteriores (menos la última) mientr
 verBalance(): Muestra el balance total del contrato.
 
 Eventos
+
 NuevaOferta(address, uint): Emitido cuando se realiza una nueva oferta.
 
 SubastaFinalizada(address, uint): Emitido cuando el dueño finaliza la subasta.
